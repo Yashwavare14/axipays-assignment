@@ -1,0 +1,21 @@
+export const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AED", "SGD"];
+
+export const COUNTRIES = [
+  "United States",
+  "United Kingdom",
+  "India",
+  "Germany",
+  "France",
+  "Singapore",
+  "UAE",
+  // add more as needed
+];
+
+export const EXPIRY_MONTHS = [
+  "01","02","03","04","05","06",
+  "07","08","09","10","11","12"
+];
+
+export const EXPIRY_YEARS = Array.from({ length: 10 }, (_, i) =>
+  String(new Date().getFullYear() + i)
+);
