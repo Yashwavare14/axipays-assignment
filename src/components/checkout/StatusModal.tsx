@@ -33,7 +33,7 @@ const statusConfig = {
   },
 };
 
-export default function StatusModal({ status, onClose, redirectUrl }: StatusModalProps) {
+export default function StatusModal({ status, onClose }: StatusModalProps) {
   if (!status) return null;
 
   const config = statusConfig[status];
