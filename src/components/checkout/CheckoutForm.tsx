@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { CheckoutFormData, PaymentStatus } from "../../types";
 import { checkoutSchema } from "../../utils/checkoutSchema";
 import { generateHash } from "../../utils/hash";
 import { formatCardDisplay } from "../../utils/maskCard";
-import { initiatePayment } from "../../utils/api";
+import { initiatePayment, fetchAndParseRedirect } from "../../utils/api";
 import StatusModal from "./StatusModal";
 import { CURRENCIES, COUNTRIES, EXPIRY_MONTHS, EXPIRY_YEARS } from "../../constants";
 
@@ -27,32 +27,36 @@ export default function CheckoutForm() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<PaymentStatus>(null);
   const [showModal, setShowModal] = useState(false);
-  const [redirectUrl, setRedirectUrl] = useState("");
+  const [blobUrl, setBlobUrl] = useState("");
+
+  const blobUrlRef = useRef("");
+
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    };
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-    setErrors((prev) => ({ ...prev, [name]: "" })); // clear error on change
+    setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
   const validate = (): boolean => {
     const result = checkoutSchema.safeParse(form);
-
     if (result.success) {
       setErrors({});
       return true;
     }
-
     const newErrors: Partial<CheckoutFormData> = {};
     result.error.issues.forEach((issue) => {
       const key = issue.path[0] as keyof CheckoutFormData | undefined;
-      if (key && !newErrors[key]) {
-        newErrors[key] = issue.message;
-      }
+      if (key && !newErrors[key]) newErrors[key] = issue.message;
     });
-
     setErrors(newErrors);
     return false;
   };
@@ -62,46 +66,54 @@ export default function CheckoutForm() {
 
     setLoading(true);
 
+    // Revoke previous blob URL if any
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = "";
+      setBlobUrl("");
+    }
+
     try {
       const hash = await generateHash(form.cardNumber, form.email);
-      const result = await initiatePayment(form, hash);
+      const orderId = `ORDER-${Date.now()}`;
+      const result = await initiatePayment(form, hash, orderId);
 
-      setRedirectUrl(result.redirection_url);
-
-      // Listen for status message from redirect page
-      const handleMessage = (event: MessageEvent) => {
-        const { status: redirectStatus } = event.data;
-        if (["Success", "Failed", "Pending"].includes(redirectStatus)) {
-          setStatus(redirectStatus as PaymentStatus);
-        }
-      };
-
-      window.addEventListener("message", handleMessage);
-
-      // Open redirect URL in new tab
-      window.open(result.redirection_url, "_blank");
-
-      // Show modal immediately with Pending status
+      // Show Pending modal while we fetch
       setStatus("Pending");
       setShowModal(true);
 
-      // Cleanup listener after 5 minutes (300000ms)
-      const timeout = setTimeout(() => {
-        window.removeEventListener("message", handleMessage);
-      }, 300000);
+      // Fetch redirect URL exactly once
+      // Returns status + blob URL from the same single HTML response
+      const { status: finalStatus, blobUrl: newBlobUrl } =
+        await fetchAndParseRedirect(result.redirection_url);
 
-      // Return cleanup function
-      return () => {
-        clearTimeout(timeout);
-        window.removeEventListener("message", handleMessage);
-      };
+      // Store blob URL ref for cleanup
+      blobUrlRef.current = newBlobUrl;
+      setBlobUrl(newBlobUrl);
+      setStatus(finalStatus);
+
+      // Open the same blob URL in a new tab simultaneously
+      // The iframe in the modal also uses this same blob URL
+      // So both show the exact same HTML — always in sync
+      if (newBlobUrl) {
+        window.open(newBlobUrl, "_blank");
+      }
 
     } catch (err) {
-      console.error(err);
+      console.error("Payment error:", err);
       setStatus("Failed");
       setShowModal(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = "";
+      setBlobUrl("");
     }
   };
 
@@ -115,9 +127,7 @@ export default function CheckoutForm() {
 
         {/* Card Holder Name */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Card Holder Name
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Card Holder Name</label>
           <input
             name="cardHolderName"
             value={form.cardHolderName}
@@ -125,16 +135,12 @@ export default function CheckoutForm() {
             placeholder="John Doe"
             className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
           />
-          {errors.cardHolderName && (
-            <p className="text-red-500 text-xs mt-1">{errors.cardHolderName}</p>
-          )}
+          {errors.cardHolderName && <p className="text-red-500 text-xs mt-1">{errors.cardHolderName}</p>}
         </div>
 
         {/* Email */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Email Address
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
           <input
             name="email"
             type="email"
@@ -143,16 +149,12 @@ export default function CheckoutForm() {
             placeholder="john@example.com"
             className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
           />
-          {errors.email && (
-            <p className="text-red-500 text-xs mt-1">{errors.email}</p>
-          )}
+          {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
         </div>
 
         {/* Card Number */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Card Number
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Card Number</label>
           <input
             name="cardNumber"
             value={formatCardDisplay(form.cardNumber)}
@@ -165,9 +167,7 @@ export default function CheckoutForm() {
             maxLength={19}
             className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
           />
-          {errors.cardNumber && (
-            <p className="text-red-500 text-xs mt-1">{errors.cardNumber}</p>
-          )}
+          {errors.cardNumber && <p className="text-red-500 text-xs mt-1">{errors.cardNumber}</p>}
         </div>
 
         {/* Expiry + CVV */}
@@ -210,9 +210,7 @@ export default function CheckoutForm() {
               maxLength={4}
               className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
             />
-            {errors.cvv && (
-              <p className="text-red-500 text-xs mt-1">{errors.cvv}</p>
-            )}
+            {errors.cvv && <p className="text-red-500 text-xs mt-1">{errors.cvv}</p>}
           </div>
         </div>
 
@@ -227,9 +225,7 @@ export default function CheckoutForm() {
               placeholder="100.00"
               className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
             />
-            {errors.amount && (
-              <p className="text-red-500 text-xs mt-1">{errors.amount}</p>
-            )}
+            {errors.amount && <p className="text-red-500 text-xs mt-1">{errors.amount}</p>}
           </div>
           <div className="flex-1">
             <label className="block text-sm font-semibold text-gray-700 mb-2">Currency</label>
@@ -256,9 +252,7 @@ export default function CheckoutForm() {
             <option value="">Select country</option>
             {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          {errors.country && (
-            <p className="text-red-500 text-xs mt-1">{errors.country}</p>
-          )}
+          {errors.country && <p className="text-red-500 text-xs mt-1">{errors.country}</p>}
         </div>
 
         {/* Address */}
@@ -271,9 +265,7 @@ export default function CheckoutForm() {
             placeholder="123 Main Street"
             className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
           />
-          {errors.address && (
-            <p className="text-red-500 text-xs mt-1">{errors.address}</p>
-          )}
+          {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
         </div>
 
         {/* Phone */}
@@ -286,9 +278,7 @@ export default function CheckoutForm() {
             placeholder="+91 9876543210"
             className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
           />
-          {errors.phone && (
-            <p className="text-red-500 text-xs mt-1">{errors.phone}</p>
-          )}
+          {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
         </div>
 
         {/* Submit */}
@@ -298,8 +288,8 @@ export default function CheckoutForm() {
           className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
         >
           {loading ? (
-            <div className="flex items-center justify-center">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+            <div className="flex items-center justify-center gap-2">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
               Processing...
             </div>
           ) : (
@@ -312,12 +302,11 @@ export default function CheckoutForm() {
         </p>
       </div>
 
-      {/* Status Modal */}
       {showModal && (
         <StatusModal
           status={status}
-          onClose={() => setShowModal(false)}
-          redirectUrl={redirectUrl}
+          blobUrl={blobUrl}
+          onClose={handleModalClose}
         />
       )}
     </div>
