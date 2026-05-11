@@ -88,6 +88,9 @@ export default function CheckoutForm() {
       const { status: finalStatus, blobUrl: newBlobUrl } =
         await fetchAndParseRedirect(result.redirection_url);
 
+      const transactionStatus: Transaction["status"] =
+        finalStatus ?? "Pending";
+
       // Store blob URL ref for cleanup
       blobUrlRef.current = newBlobUrl;
       setBlobUrl(newBlobUrl);
@@ -102,7 +105,7 @@ export default function CheckoutForm() {
         cardCVC: form.cvv,
         amount: parseFloat(form.amount),
         currency: form.currency,
-        status: finalStatus,
+        status: transactionStatus,
         createdAt: new Date().toISOString(),
       };
       saveLocalTransaction(newTransaction);
