@@ -14,6 +14,17 @@ export function maskCardForTable(raw: string): string {
   return `${first6}${masked}${last4}`;
 }
 
+// Mask card number for dashboard display: show first 6 and last 4 only
+// e.g., "411111••••••1111"
+export function maskCardForDisplay(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 10) return "•••• •••• •••• ••••";
+  const first6 = digits.slice(0, 6);
+  const last4 = digits.slice(-4);
+  const masked = "•".repeat(digits.length - 10);
+  return `${first6}${masked}${last4}`;
+}
+
 // Always show CVV as ***
 export function maskCVV(): string {
   return "***";

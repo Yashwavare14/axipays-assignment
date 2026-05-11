@@ -1,4 +1,4 @@
-import type { CheckoutFormData, InitiatePaymentResponse } from "../types";
+import type { CheckoutFormData, InitiatePaymentResponse, Transaction } from "../types";
 import type { PaymentStatus } from "../types";
 
 const API_URL = "https://payment-assignment.onrender.com/initiate-payment";
@@ -99,4 +99,59 @@ export async function fetchAndParseRedirect(redirectUrl: string): Promise<{
     console.warn("fetchAndParseRedirect error:", err);
     return { status: "Pending", blobUrl: "" };
   }
+}
+
+function normalizeStatus(value: unknown): Transaction["status"] {
+  const status = String(value ?? "").toLowerCase();
+  if (status === "success") return "Success";
+  if (status === "failed") return "Failed";
+  if (status === "pending") return "Pending";
+  return "Pending";
+}
+
+function normalizeTransaction(item: unknown): Transaction {
+  const txn = item as Record<string, unknown>;
+  return {
+    orderId: String(txn.orderId ?? ""),
+    cardNumber: String(txn.cardNumber ?? ""),
+    email: String(txn.email ?? ""),
+    expiryMonth: String(txn.expiryMonth ?? ""),
+    expiryYear: String(txn.expiryYear ?? ""),
+    cardCVC: String(txn.cardCVC ?? ""),
+    amount: Number(txn.amount ?? 0),
+    currency: String(txn.currency ?? ""),
+    status: normalizeStatus(txn.status),
+    createdAt: typeof txn.createdAt === "string" ? txn.createdAt : undefined,
+  };
+}
+
+/**
+ * Fetch transactions from the dashboard API
+ */
+export async function fetchTransactions(
+  page: number = 1,
+  limit: number = 100
+): Promise<Transaction[]> {
+  const TRANSACTIONS_URL = "https://payment-assignment.onrender.com/transactions";
+  const url = `${TRANSACTIONS_URL}?page=${page}&limit=${limit}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch transactions: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const raw = (data?.data ?? data ?? []) as unknown;
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.map(normalizeTransaction);
 }

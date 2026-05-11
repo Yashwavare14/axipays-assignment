@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import type { CheckoutFormData, PaymentStatus } from "../../types";
+import type { CheckoutFormData, PaymentStatus, Transaction } from "../../types";
 import { checkoutSchema } from "../../utils/checkoutSchema";
 import { generateHash } from "../../utils/hash";
 import { formatCardDisplay } from "../../utils/maskCard";
 import { initiatePayment, fetchAndParseRedirect } from "../../utils/api";
+import { saveLocalTransaction } from "../../utils/localTransactions";
 import StatusModal from "./StatusModal";
-import { CURRENCIES, COUNTRIES, EXPIRY_MONTHS, EXPIRY_YEARS } from "../../constants";
+import { CURRENCIES, COUNTRIES, expiryMonthS, expiryYearS } from "../../constants";
 
 const initialState: CheckoutFormData = {
   cardHolderName: "",
@@ -92,6 +93,20 @@ export default function CheckoutForm() {
       setBlobUrl(newBlobUrl);
       setStatus(finalStatus);
 
+      const newTransaction: Transaction = {
+        orderId,
+        cardNumber: form.cardNumber.replace(/\s/g, ""),
+        email: form.email,
+        expiryMonth: form.expiryMonth,
+        expiryYear: form.expiryYear,
+        cardCVC: form.cvv,
+        amount: parseFloat(form.amount),
+        currency: form.currency,
+        status: finalStatus,
+        createdAt: new Date().toISOString(),
+      };
+      saveLocalTransaction(newTransaction);
+
       // Open the same blob URL in a new tab simultaneously
       // The iframe in the modal also uses this same blob URL
       // So both show the exact same HTML — always in sync
@@ -118,7 +133,7 @@ export default function CheckoutForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-xl border border-gray-100">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Secure Checkout</h1>
@@ -181,7 +196,7 @@ export default function CheckoutForm() {
               className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
             >
               <option value="">MM</option>
-              {EXPIRY_MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+              {expiryMonthS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
           <div className="flex-1">
@@ -193,7 +208,7 @@ export default function CheckoutForm() {
               className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
             >
               <option value="">YYYY</option>
-              {EXPIRY_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+              {expiryYearS.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
           <div className="flex-1">
@@ -285,7 +300,7 @@ export default function CheckoutForm() {
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+          className="w-full bg-linear-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
         >
           {loading ? (
             <div className="flex items-center justify-center gap-2">
