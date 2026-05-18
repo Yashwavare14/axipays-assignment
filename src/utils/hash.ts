@@ -32,6 +32,11 @@ export async function generateHash(
   cardNumber: string,
   email: string
 ): Promise<string> {
+  const secretKey = import.meta.env.VITE_SECRET_KEY;
+  if (!secretKey) {
+    throw new Error("VITE_SECRET_KEY environment variable is not defined");
+  }
+
   const digits = cardNumber.replace(/\s/g, "");
 
   // Step 1 & 2: Extract first 6 and last 4
@@ -50,11 +55,11 @@ export async function generateHash(
   // Step 6: Build the message
   const message = reversedEmail + "AXIPAYS" + reversedCombined;
 
-  // Step 7: Uppercase
+  // Step 7: UppercaseSECRET_KEY
   const upperMessage = message.toUpperCase();
 
   // Step 8: HMAC-SHA256 with secret key, return uppercase hex
-  const hash = await hmacSHA256(upperMessage, "AXI2026");
+  const hash = await hmacSHA256(upperMessage, secretKey);
 
   return hash;
 }

@@ -1,7 +1,5 @@
-import type { CheckoutFormData, InitiatePaymentResponse, Transaction } from "../types";
-import type { PaymentStatus } from "../types";
-
-const API_URL = "https://payment-assignment.onrender.com/initiate-payment";
+// Using Web Crypto API (works in both browser and Node.js)
+import type { PaymentStatus, CheckoutFormData, InitiatePaymentResponse, Transaction } from "../types";
 
 export async function initiatePayment(
   form: CheckoutFormData,
@@ -23,11 +21,14 @@ export async function initiatePayment(
     phone: form.phone,
   };
 
-  const response = await fetch(API_URL, {
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (!apiUrl) throw new Error("VITE_API_URL environment variable is not defined");
+
+  const response = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Hash: hash,
+      "Hash": hash,
     },
     body: JSON.stringify(payload),
   });
@@ -132,7 +133,7 @@ export async function fetchTransactions(
   page: number = 1,
   limit: number = 100
 ): Promise<Transaction[]> {
-  const TRANSACTIONS_URL = "https://payment-assignment.onrender.com/transactions";
+  const TRANSACTIONS_URL = import.meta.env.VITE_TRANSACTIONS_URL ?? "https://payment-assignment.onrender.com/transactions";
   const url = `${TRANSACTIONS_URL}?page=${page}&limit=${limit}`;
 
   const response = await fetch(url, {
